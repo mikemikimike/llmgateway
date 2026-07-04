@@ -2260,6 +2260,7 @@ const getInvoices = createRoute({
 									"dev_plan_renewal",
 									"dev_plan_upgrade",
 									"dev_plan_reset_pass",
+									"credit_refund",
 								]),
 								date: z.string(),
 								amount: z.string().nullable(),
@@ -2333,6 +2334,9 @@ devPlans.openapi(getInvoices, async (c) => {
 				"dev_plan_renewal",
 				"dev_plan_upgrade",
 				"dev_plan_reset_pass",
+				// Refunds against DevPass payments — shown as a line item so the
+				// history matches the net revenue reported in the KPIs/detail.
+				"credit_refund",
 			].includes(t.type),
 		)
 		.map((t) => ({
@@ -2341,7 +2345,8 @@ devPlans.openapi(getInvoices, async (c) => {
 				| "dev_plan_start"
 				| "dev_plan_renewal"
 				| "dev_plan_upgrade"
-				| "dev_plan_reset_pass",
+				| "dev_plan_reset_pass"
+				| "credit_refund",
 			date: t.createdAt.toISOString(),
 			amount: t.amount,
 			creditAmount: t.creditAmount,
