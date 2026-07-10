@@ -87,6 +87,7 @@ import {
 import { getResponsesContext } from "@/lib/responses-context.js";
 import { getResolvedRoutingConfig } from "@/lib/routing-config-loader.js";
 import { getNoFallbackRoutingMetadata } from "@/lib/routing-metadata.js";
+import { checkSpendLimit } from "@/lib/spend-limit.js";
 import {
 	buildUpstreamErrorClientPayload,
 	clientFacingUpstreamFailureMessage,
@@ -4764,6 +4765,18 @@ chat.openapi(completions, async (c) => {
 			throw new HTTPException(402, {
 				message: `Organization ${organization.id} has insufficient credits`,
 			});
+		}
+
+		// Per-org daily/monthly USD spend caps. Applies to regular pay-as-you-go
+		// orgs only (kind/enterprise/enabled gates live inside checkSpendLimit);
+		// free models are exempt.
+		if (!((finalModelInfo ?? modelInfo) as ModelDefinition).free) {
+			const spendLimit = await checkSpendLimit(organization);
+			if (!spendLimit.allowed) {
+				throw new HTTPException(429, {
+					message: `Organization ${organization.id} has reached its ${spendLimit.period} spend limit of $${spendLimit.limit}. Try again later or contact support to raise your limit.`,
+				});
+			}
 		}
 
 		if (usedProvider === "llmgateway") {
