@@ -80,6 +80,7 @@ export function mapFinishReasonToOpenai(
 			}
 		case "anthropic":
 		case "vertex-anthropic":
+		case "azure-anthropic":
 			if (!finishReason) {
 				return hasToolCalls ? "tool_calls" : "stop";
 			}

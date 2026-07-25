@@ -1569,6 +1569,7 @@ export async function prepareRequestBody(
 	const providerHandlesCacheControl =
 		usedProvider === "anthropic" ||
 		usedProvider === "vertex-anthropic" ||
+		usedProvider === "azure-anthropic" ||
 		usedProvider === "aws-bedrock" ||
 		usedProvider === "alibaba";
 	const stripAllCacheControl = !providerCacheControlEnabled;
@@ -2489,7 +2490,8 @@ export async function prepareRequestBody(
 			break;
 		}
 		case "anthropic":
-		case "vertex-anthropic": {
+		case "vertex-anthropic":
+		case "azure-anthropic": {
 			// Remove generic tool_choice that was added earlier
 			delete requestBody.tool_choice;
 

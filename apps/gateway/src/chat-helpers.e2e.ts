@@ -1171,6 +1171,14 @@ function providerEnvOptionsForTests(
 		}
 		return Object.keys(opts).length > 0 ? opts : undefined;
 	}
+	if (
+		providerId === "azure-anthropic" &&
+		process.env.LLM_AZURE_ANTHROPIC_RESOURCE
+	) {
+		return {
+			azure_anthropic_resource: process.env.LLM_AZURE_ANTHROPIC_RESOURCE,
+		};
+	}
 	return undefined;
 }
 
