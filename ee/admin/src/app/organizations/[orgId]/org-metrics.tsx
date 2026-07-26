@@ -3,6 +3,7 @@
 import {
 	Activity,
 	CircleDollarSign,
+	Database,
 	Hash,
 	Loader2,
 	Server,
@@ -266,8 +267,15 @@ export function OrgMetricsSection({ orgId }: { orgId: string }) {
 				<MetricCard
 					label="Total Cost"
 					value={currencyFormatter.format(safeNumber(metrics.totalCost))}
-					subtitle="Sum of metered usage costs (USD)"
+					subtitle="Sum of metered usage costs (USD, excludes storage)"
 					icon={<CircleDollarSign className="h-4 w-4" />}
+					accent="purple"
+				/>
+				<MetricCard
+					label="Storage Cost"
+					value={currencyFormatter.format(safeNumber(metrics.dataStorageCost))}
+					subtitle="Data retention billing, charged on top of usage costs"
+					icon={<Database className="h-4 w-4" />}
 					accent="purple"
 				/>
 				<MetricCard

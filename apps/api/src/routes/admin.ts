@@ -209,6 +209,7 @@ const orgMetricsSchema = z.object({
 	cachedCost: z.number(),
 	cacheWriteTokens: z.number(),
 	cacheWriteCost: z.number(),
+	dataStorageCost: z.number(),
 	mostUsedModel: z.string().nullable(),
 	mostUsedProvider: z.string().nullable(),
 	mostUsedModelCost: z.number(),
@@ -2269,6 +2270,7 @@ admin.openapi(getOrganizationMetrics, async (c) => {
 	let cachedCost = 0;
 	let cacheWriteTokens = 0;
 	let cacheWriteCost = 0;
+	let dataStorageCost = 0;
 	let discountSavings = 0;
 	let mostUsedModel: string | null = null;
 	let mostUsedProvider: string | null = null;
@@ -2325,6 +2327,10 @@ admin.openapi(getOrganizationMetrics, async (c) => {
 					sql<number>`COALESCE(SUM(${projectHourlyStats.cacheWriteInputCost}), 0)`.as(
 						"cacheWriteInputCost",
 					),
+				dataStorageCost:
+					sql<number>`COALESCE(SUM(${projectHourlyStats.dataStorageCost}), 0)`.as(
+						"dataStorageCost",
+					),
 			})
 			.from(projectHourlyStats)
 			.where(
@@ -2347,6 +2353,7 @@ admin.openapi(getOrganizationMetrics, async (c) => {
 			cachedCost = Number(totals.cachedInputCost) || 0;
 			cacheWriteTokens = Number(totals.cacheWriteTokens) || 0;
 			cacheWriteCost = Number(totals.cacheWriteInputCost) || 0;
+			dataStorageCost = Number(totals.dataStorageCost) || 0;
 			discountSavings = Number(totals.discountSavings) || 0;
 		}
 
@@ -2411,6 +2418,7 @@ admin.openapi(getOrganizationMetrics, async (c) => {
 		cachedCost,
 		cacheWriteTokens,
 		cacheWriteCost,
+		dataStorageCost,
 		mostUsedModel,
 		mostUsedProvider,
 		mostUsedModelCost,
@@ -2740,6 +2748,7 @@ const projectMetricsSchema = z.object({
 	cachedCost: z.number(),
 	cacheWriteTokens: z.number(),
 	cacheWriteCost: z.number(),
+	dataStorageCost: z.number(),
 	mostUsedModel: z.string().nullable(),
 	mostUsedProvider: z.string().nullable(),
 	mostUsedModelCost: z.number(),
@@ -2818,6 +2827,7 @@ admin.openapi(getProjectMetrics, async (c) => {
 	let cachedCost = 0;
 	let cacheWriteTokens = 0;
 	let cacheWriteCost = 0;
+	let dataStorageCost = 0;
 	let discountSavings = 0;
 	let mostUsedModel: string | null = null;
 	let mostUsedProvider: string | null = null;
@@ -2872,6 +2882,10 @@ admin.openapi(getProjectMetrics, async (c) => {
 				sql<number>`COALESCE(SUM(${projectHourlyStats.cacheWriteInputCost}), 0)`.as(
 					"cacheWriteInputCost",
 				),
+			dataStorageCost:
+				sql<number>`COALESCE(SUM(${projectHourlyStats.dataStorageCost}), 0)`.as(
+					"dataStorageCost",
+				),
 		})
 		.from(projectHourlyStats)
 		.where(
@@ -2894,6 +2908,7 @@ admin.openapi(getProjectMetrics, async (c) => {
 		cachedCost = Number(totals.cachedInputCost) || 0;
 		cacheWriteTokens = Number(totals.cacheWriteTokens) || 0;
 		cacheWriteCost = Number(totals.cacheWriteInputCost) || 0;
+		dataStorageCost = Number(totals.dataStorageCost) || 0;
 		discountSavings = Number(totals.discountSavings) || 0;
 	}
 
@@ -2952,6 +2967,7 @@ admin.openapi(getProjectMetrics, async (c) => {
 		cachedCost,
 		cacheWriteTokens,
 		cacheWriteCost,
+		dataStorageCost,
 		mostUsedModel,
 		mostUsedProvider,
 		mostUsedModelCost,
