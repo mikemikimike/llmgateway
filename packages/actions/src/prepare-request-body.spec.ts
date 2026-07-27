@@ -3016,6 +3016,65 @@ describe("prepareRequestBody - AWS Bedrock", () => {
 		]);
 	});
 
+	test("caps cachePoint blocks at 4 — Bedrock enforces Anthropic's limit too", async () => {
+		const marker = { type: "ephemeral" as const };
+		const requestBody = (await prepareRequestBody(
+			"aws-bedrock",
+			"claude-opus-4-6",
+			null,
+			"anthropic.claude-opus-4-6-v1",
+			[
+				{
+					role: "system",
+					content: [
+						{ type: "text", text: "A".repeat(30000), cache_control: marker },
+					],
+				},
+				{
+					role: "user",
+					content: [{ type: "text", text: "one", cache_control: marker }],
+				},
+				{ role: "assistant", content: "ok" },
+				{
+					role: "user",
+					content: [{ type: "text", text: "two", cache_control: marker }],
+				},
+				{ role: "assistant", content: "ok" },
+				{
+					role: "user",
+					content: [{ type: "text", text: "three", cache_control: marker }],
+				},
+				{ role: "assistant", content: "ok" },
+				{
+					role: "user",
+					content: [{ type: "text", text: "four", cache_control: marker }],
+				},
+				{ role: "assistant", content: "ok" },
+				{
+					role: "user",
+					content: [{ type: "text", text: "five", cache_control: marker }],
+				},
+			] as any,
+			false,
+			undefined,
+			1024,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+		)) as any;
+
+		let cachePoints = (requestBody.system as unknown[]).filter(
+			(block) => (block as { cachePoint?: unknown }).cachePoint,
+		).length;
+		for (const msg of requestBody.messages) {
+			cachePoints += (msg.content as unknown[]).filter(
+				(block) => (block as { cachePoint?: unknown }).cachePoint,
+			).length;
+		}
+		expect(cachePoints).toBe(4);
+	});
+
 	test("forwards base64 image blocks as Bedrock image content", async () => {
 		const pngBase64 =
 			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
