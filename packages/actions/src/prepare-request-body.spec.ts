@@ -490,6 +490,121 @@ describe("prepareRequestBody - Anthropic", () => {
 			type: "ephemeral",
 		});
 	});
+
+	test("drops the auto system marker when caller markers already fill the limit", async () => {
+		// Long enough to clear the model's minCacheableTokens threshold so the
+		// system heuristic would fire.
+		const longSystemPrompt = "A".repeat(30000);
+		const marker = { type: "ephemeral" as const };
+		const requestBody = (await prepareRequestBody(
+			"vertex-anthropic",
+			"claude-opus-4-6",
+			null,
+			"claude-opus-4-6",
+			[
+				{ role: "system", content: longSystemPrompt },
+				{
+					role: "user",
+					content: [{ type: "text", text: "one", cache_control: marker }],
+				},
+				{ role: "assistant", content: "ok" },
+				{
+					role: "user",
+					content: [{ type: "text", text: "two", cache_control: marker }],
+				},
+				{ role: "assistant", content: "ok" },
+				{
+					role: "user",
+					content: [{ type: "text", text: "three", cache_control: marker }],
+				},
+				{ role: "assistant", content: "ok" },
+				{
+					role: "user",
+					content: [{ type: "text", text: "four", cache_control: marker }],
+				},
+			] as any,
+			true,
+			undefined,
+			1024,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+		)) as AnthropicRequestBody;
+
+		// The caller already spent Anthropic's 4-block budget in the messages, so
+		// the long system prompt must not get a fifth marker.
+		for (const block of requestBody.system as unknown[]) {
+			expect(getCacheControl(block)).toBeUndefined();
+		}
+
+		const messageMarkers: unknown[] = [];
+		for (const msg of requestBody.messages) {
+			if (Array.isArray(msg.content)) {
+				for (const block of msg.content) {
+					const cacheControl = getCacheControl(block);
+					if (cacheControl) {
+						messageMarkers.push(cacheControl);
+					}
+				}
+			}
+		}
+		expect(messageMarkers).toHaveLength(4);
+	});
+
+	test("caps caller-supplied markers exceeding the 4-block limit", async () => {
+		const marker = { type: "ephemeral" as const };
+		const messages = [
+			{ role: "user", content: [{ type: "text", text: "one" }] },
+			{ role: "assistant", content: "ok" },
+			{ role: "user", content: [{ type: "text", text: "two" }] },
+			{ role: "assistant", content: "ok" },
+			{ role: "user", content: [{ type: "text", text: "three" }] },
+			{ role: "assistant", content: "ok" },
+			{ role: "user", content: [{ type: "text", text: "four" }] },
+			{ role: "assistant", content: "ok" },
+			{ role: "user", content: [{ type: "text", text: "five" }] },
+		].map((m) =>
+			Array.isArray(m.content)
+				? {
+						...m,
+						content: m.content.map((block) => ({
+							...block,
+							cache_control: marker,
+						})),
+					}
+				: m,
+		);
+
+		const requestBody = (await prepareRequestBody(
+			"anthropic",
+			"claude-3-5-sonnet-20241022",
+			null,
+			"claude-3-5-sonnet-20241022",
+			messages as any,
+			false,
+			undefined,
+			1024,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+		)) as AnthropicRequestBody;
+
+		// The oldest marker is dropped: every later breakpoint's prefix already
+		// covers it, so keeping the newest four preserves the longest prefixes.
+		const markedTexts: string[] = [];
+		for (const msg of requestBody.messages) {
+			if (Array.isArray(msg.content)) {
+				for (const block of msg.content) {
+					if (getCacheControl(block)) {
+						markedTexts.push((block as { text: string }).text);
+					}
+				}
+			}
+		}
+		expect(markedTexts).toEqual(["two", "three", "four", "five"]);
+	});
 });
 
 describe("prepareRequestBody - OpenAI image generation", () => {

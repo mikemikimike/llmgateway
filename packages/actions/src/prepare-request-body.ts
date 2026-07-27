@@ -28,6 +28,7 @@ import {
 import { getApiKeyHashSecret } from "@llmgateway/shared/api-key-hash";
 import { assertSafeUserContentUrl } from "@llmgateway/shared/url-safety-node";
 
+import { limitAnthropicCacheControlBlocks } from "./limit-anthropic-cache-control.js";
 import { parseDataUrl } from "./parse-data-url.js";
 import { parseToolCallArguments } from "./parse-tool-call-arguments.js";
 import { processImageUrl } from "./process-image-url.js";
@@ -2849,6 +2850,19 @@ export async function prepareRequestBody(
 					// and rely on system prompt instructions for JSON output.
 				}
 			}
+
+			// Final guard: the system heuristic above and the message-level
+			// heuristics in transformAnthropicMessages each cap themselves at 4
+			// markers, but neither sees the caller's markers in the other half of
+			// the request, so the combined total can exceed Anthropic's hard limit.
+			const limited = limitAnthropicCacheControlBlocks(
+				requestBody.system,
+				requestBody.messages,
+			);
+			if (limited.system !== undefined) {
+				requestBody.system = limited.system;
+			}
+			requestBody.messages = limited.messages;
 
 			if (usedProvider === "vertex-anthropic") {
 				requestBody.anthropic_version = "vertex-2023-10-16";
