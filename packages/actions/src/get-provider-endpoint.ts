@@ -131,6 +131,7 @@ const PROVIDER_DEFAULT_BASE_URLS: Partial<Record<ProviderId, string>> = {
 	deepinfra: "https://api.deepinfra.com/v1/openai",
 	gonka24: "https://api.gonka24.com",
 	fireworks: "https://api.fireworks.ai/inference",
+	ranoai: "https://api.ranoai.com",
 };
 
 export function getProviderDefaultBaseUrl(
@@ -816,6 +817,7 @@ export function getProviderEndpoint(
 		case "embercloud":
 		case "tundra":
 		case "scx-ai":
+		case "ranoai":
 		case "custom":
 		default:
 			return `${url}/v1/chat/completions`;
