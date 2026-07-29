@@ -2221,8 +2221,9 @@ devPlans.openapi(updateBillingDetails, async (c) => {
 	});
 });
 
-// List past DevPass invoices (plan start, renewals and upgrades) with the
-// amount charged and the virtual credits granted for each billing event.
+// List past DevPass invoices (plan start, renewals, upgrades and Reset
+// Passes) with the amount charged and the virtual credits granted for each
+// billing event, plus the refund rows for any of those that were refunded.
 const getInvoices = createRoute({
 	method: "get",
 	path: "/invoices",
@@ -2240,6 +2241,7 @@ const getInvoices = createRoute({
 									"dev_plan_renewal",
 									"dev_plan_upgrade",
 									"dev_plan_reset_pass",
+									"credit_refund",
 								]),
 								date: z.string(),
 								amount: z.string().nullable(),
@@ -2247,6 +2249,7 @@ const getInvoices = createRoute({
 								currency: z.string(),
 								status: z.enum(["pending", "completed", "failed"]),
 								description: z.string().nullable(),
+								refunded: z.boolean(),
 								refund: z
 									.object({
 										eligible: z.boolean(),
@@ -2306,14 +2309,37 @@ devPlans.openapi(getInvoices, async (c) => {
 		},
 	});
 
+	const billingEventTypes = [
+		"dev_plan_start",
+		"dev_plan_renewal",
+		"dev_plan_upgrade",
+		"dev_plan_reset_pass",
+	];
+	const billingEventIds = new Set(
+		transactions
+			.filter((t) => billingEventTypes.includes(t.type))
+			.map((t) => t.id),
+	);
+	// Refund rows for dev-plan billing events (credit notes); their
+	// relatedTransactionId also flags the refunded original for display.
+	const refundedIds = new Set(
+		transactions
+			.filter(
+				(t) =>
+					t.type === "credit_refund" &&
+					t.relatedTransactionId !== null &&
+					billingEventIds.has(t.relatedTransactionId),
+			)
+			.map((t) => t.relatedTransactionId as string),
+	);
+
 	const invoices = transactions
-		.filter((t) =>
-			[
-				"dev_plan_start",
-				"dev_plan_renewal",
-				"dev_plan_upgrade",
-				"dev_plan_reset_pass",
-			].includes(t.type),
+		.filter(
+			(t) =>
+				billingEventTypes.includes(t.type) ||
+				(t.type === "credit_refund" &&
+					t.relatedTransactionId !== null &&
+					billingEventIds.has(t.relatedTransactionId)),
 		)
 		.map((t) => ({
 			id: t.id,
@@ -2321,13 +2347,15 @@ devPlans.openapi(getInvoices, async (c) => {
 				| "dev_plan_start"
 				| "dev_plan_renewal"
 				| "dev_plan_upgrade"
-				| "dev_plan_reset_pass",
+				| "dev_plan_reset_pass"
+				| "credit_refund",
 			date: t.createdAt.toISOString(),
 			amount: t.amount,
 			creditAmount: t.creditAmount,
 			currency: t.currency,
 			status: t.status,
 			description: t.description,
+			refunded: refundedIds.has(t.id),
 			refund: isSelfRefundCandidateType(t.type)
 				? computeSelfRefundEligibility({
 						organization: personalOrg,

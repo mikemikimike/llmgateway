@@ -40,14 +40,19 @@ const PAGE_SIZE = 10;
 type Invoice =
 	paths["/dev-plans/invoices"]["get"]["responses"]["200"]["content"]["application/json"]["invoices"][number];
 
-// A DevPass invoice is downloadable when it is a completed, positive charge
-// (mirrors isInvoiceableTransaction on the API).
+// A DevPass invoice is downloadable when it is a completed, positive amount
+// (mirrors isInvoiceableTransaction on the API). Charges download as invoices,
+// refund rows as credit notes.
 function isInvoiceable(invoice: Invoice): boolean {
 	return (
 		invoice.status === "completed" &&
 		invoice.amount !== null &&
 		Number(invoice.amount) > 0
 	);
+}
+
+function isRefundRow(invoice: Invoice): boolean {
+	return invoice.type === "credit_refund";
 }
 
 // Invisible stand-in that reserves the exact footprint of an action button so
@@ -70,6 +75,7 @@ function ActionButtonPlaceholder({ children }: { children: ReactNode }) {
 function InvoiceDownloadButton({ invoice }: { invoice: Invoice }) {
 	const fetchClient = useFetchClient();
 	const [loading, setLoading] = useState(false);
+	const documentLabel = isRefundRow(invoice) ? "Credit note" : "Invoice";
 
 	async function handleDownload() {
 		setLoading(true);
@@ -89,7 +95,7 @@ function InvoiceDownloadButton({ invoice }: { invoice: Invoice }) {
 			const url = URL.createObjectURL(data as unknown as Blob);
 			const link = document.createElement("a");
 			link.href = url;
-			link.download = `invoice-${invoice.id}.pdf`;
+			link.download = `${isRefundRow(invoice) ? "credit-note" : "invoice"}-${invoice.id}.pdf`;
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -113,7 +119,7 @@ function InvoiceDownloadButton({ invoice }: { invoice: Invoice }) {
 			) : (
 				<Download className="h-4 w-4" />
 			)}
-			<span className="sr-only sm:not-sr-only">Invoice</span>
+			<span className="sr-only sm:not-sr-only">{documentLabel}</span>
 		</Button>
 	);
 }
@@ -267,6 +273,7 @@ const TYPE_LABELS: Record<Invoice["type"], string> = {
 	dev_plan_renewal: "Renewal",
 	dev_plan_upgrade: "Upgrade",
 	dev_plan_reset_pass: "Reset Pass",
+	credit_refund: "Refund",
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -274,13 +281,20 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 	currency: "USD",
 });
 
-function formatAmount(amount: string | null, currency: string): string {
+function formatAmount(
+	amount: string | null,
+	currency: string,
+	negate = false,
+): string {
 	if (amount === null) {
 		return "—";
 	}
-	const value = Number(amount);
+	let value = Number(amount);
 	if (!Number.isFinite(value)) {
 		return "—";
+	}
+	if (negate) {
+		value = -value;
 	}
 	if (currency === "USD") {
 		return currencyFormatter.format(value);
@@ -317,8 +331,8 @@ export default function DevPassInvoices() {
 		<div>
 			<h2 className="mb-1 font-semibold">Invoices</h2>
 			<p className="mb-4 text-sm text-muted-foreground">
-				A record of every DevPass charge, including the amount debited and the
-				usage credits granted for that billing period.
+				A record of every DevPass charge and refund, including the amount
+				debited and the usage credits granted for that billing period.
 			</p>
 
 			<div className="overflow-hidden rounded-xl border sm:grid sm:grid-cols-[1fr_1fr_auto_auto_auto]">
@@ -350,12 +364,22 @@ export default function DevPassInvoices() {
 									{invoice.status}
 								</span>
 							)}
+							{invoice.refunded && (
+								<span className="mt-0.5 inline-block rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+									Refunded
+								</span>
+							)}
 						</div>
 						<div className="text-right text-sm tabular-nums sm:text-right">
 							<span className="text-xs text-muted-foreground sm:hidden">
 								Amount{" "}
 							</span>
-							{formatAmount(invoice.amount, invoice.currency)}
+							{/* Refund rows store the returned amount as a positive value. */}
+							{formatAmount(
+								invoice.amount,
+								invoice.currency,
+								isRefundRow(invoice),
+							)}
 						</div>
 						<div className="text-right text-sm tabular-nums text-muted-foreground sm:text-right">
 							<span className="text-xs sm:hidden">Credits </span>

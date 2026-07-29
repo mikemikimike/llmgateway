@@ -62,13 +62,22 @@ function formatDateTime(dateString: string) {
 }
 
 function formatTransactionType(type: string) {
+	// credit_refund rows are money returned to the payment method — "Credit
+	// Refund" would read as a refund of virtual credits.
+	if (type === "credit_refund") {
+		return "Refund";
+	}
 	return type.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function getTransactionTypeBadgeVariant(
 	type: string,
 ): "default" | "secondary" | "outline" | "destructive" {
-	if (type.includes("cancel") || type.includes("end")) {
+	if (
+		type.includes("cancel") ||
+		type.includes("end") ||
+		type.includes("refund")
+	) {
 		return "destructive";
 	}
 	if (
@@ -472,7 +481,13 @@ export default async function DevpassDetailPage({
 											</TableCell>
 											<TableCell className="tabular-nums">
 												{t.amount
-													? currencyFormatter.format(parseFloat(t.amount))
+													? currencyFormatter.format(
+															// Refund rows store the returned amount as a
+															// positive value (see stripe.ts).
+															t.type === "credit_refund"
+																? -parseFloat(t.amount)
+																: parseFloat(t.amount),
+														)
 													: "—"}
 											</TableCell>
 											<TableCell className="tabular-nums">

@@ -12449,6 +12449,10 @@ admin.openapi(getDevpassSubscriber, async (c) => {
 					"dev_plan_renewal",
 					"dev_plan_reset_pass",
 					"dev_plan_reset_pass_gift",
+					// Refund rows reference the refunded purchase via
+					// relatedTransactionId; without them a refunded plan payment or
+					// Reset Pass looks like it was never refunded.
+					"credit_refund",
 					// Legacy types — pre dev_plan_* rename, still in DB for older
 					// dev plan subscribers; without these their history reads as empty.
 					"subscription_start",
@@ -14099,6 +14103,10 @@ admin.openapi(getChatPlansSubscriber, async (c) => {
 					"chat_plan_resume",
 					"chat_plan_end",
 					"chat_plan_renewal",
+					// Refund rows reference the refunded purchase via
+					// relatedTransactionId; without them a refunded plan payment
+					// looks like it was never refunded.
+					"credit_refund",
 				]),
 			),
 		)

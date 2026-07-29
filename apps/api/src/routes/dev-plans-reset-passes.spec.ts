@@ -704,6 +704,42 @@ describe("reset pass lifecycle and status", () => {
 		expect(refundRows[0].stripeRefundId).toBe("re_full");
 	});
 
+	it("lists the refund row and flags the refunded pass in invoices", async () => {
+		await insertOrg({ devPlanResetPassesPro: 2 });
+		await insertPassPurchaseTransaction("pi_refund_listed");
+		stripeMock.refunds.list.mockResolvedValue({
+			data: [{ id: "re_listed", amount: 2900, reason: null }],
+		});
+		stripeMock.paymentIntents.retrieve.mockResolvedValue({
+			id: "pi_refund_listed",
+			metadata: {
+				organizationId: ORG_ID,
+				kind: "dev_plan_reset_pass",
+				devPlan: "pro",
+			},
+		});
+
+		await handleChargeRefunded(chargeRefundedEvent("pi_refund_listed"));
+
+		const res = await app.request("/dev-plans/invoices", {
+			headers: { Cookie: token },
+		});
+		expect(res.status).toBe(200);
+		const body = await res.json();
+
+		const refundRow = body.invoices.find(
+			(i: { type: string }) => i.type === "credit_refund",
+		);
+		expect(refundRow).toBeDefined();
+		expect(refundRow.amount).toBe("29");
+		expect(refundRow.refunded).toBe(false);
+
+		const purchaseRow = body.invoices.find(
+			(i: { type: string }) => i.type === "dev_plan_reset_pass",
+		);
+		expect(purchaseRow.refunded).toBe(true);
+	});
+
 	it("clamps the claw-back at zero when the pass was already redeemed", async () => {
 		await insertOrg({ devPlanResetPassesPro: 0 });
 		await insertPassPurchaseTransaction("pi_refund_redeemed");
