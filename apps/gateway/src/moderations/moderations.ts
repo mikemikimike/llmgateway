@@ -42,6 +42,14 @@ import { getOrganizationEnvVariant, models } from "@llmgateway/models";
 import type { ServerTypes } from "@/vars.js";
 import type { InferSelectModel, tables } from "@llmgateway/db";
 
+/**
+ * Flat per-request price for `/v1/moderations`, in USD. OpenAI serves the
+ * moderation models for free, but we still pay for the request handling,
+ * logging and storage around it, so every successful moderation is billed at
+ * this fixed rate regardless of input size or moderation model.
+ */
+export const MODERATION_REQUEST_PRICE = 0.00001;
+
 const moderationInputTextSchema = z.string().openapi({
 	description: "Plain text input to classify.",
 	example: "I want to harm someone.",
@@ -423,7 +431,7 @@ moderations.openapi(createModeration, async (c): Promise<any> => {
 	// can never name it and evaluating them would deny existing keys with no way
 	// to allowlist it. deny/allow_providers ["openai"] and IP CIDR rules still
 	// gate moderation. End-user sessions are exempt: their model allowlists
-	// target chat models and must not block the free moderation endpoint.
+	// target chat models and must not block the moderation endpoint.
 	if (!apiKey.endUserSession) {
 		const iamValidation = await validateRequestModelAccess({
 			apiKey,
@@ -432,7 +440,7 @@ moderations.openapi(createModeration, async (c): Promise<any> => {
 			activeModelInfo: {
 				id: "openai-moderation",
 				family: "openai",
-				free: true,
+				free: false,
 				providers: [
 					{
 						providerId: "openai",
@@ -853,13 +861,13 @@ moderations.openapi(createModeration, async (c): Promise<any> => {
 					inputCost: 0,
 					outputCost: 0,
 					cachedInputCost: 0,
-					requestCost: 0,
+					requestCost: MODERATION_REQUEST_PRICE,
 					webSearchCost: 0,
 					imageInputTokens: null,
 					imageOutputTokens: null,
 					imageInputCost: null,
 					imageOutputCost: null,
-					cost: 0,
+					cost: MODERATION_REQUEST_PRICE,
 					estimatedCost: false,
 					discount: null,
 					pricingTier: null,

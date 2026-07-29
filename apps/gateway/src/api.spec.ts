@@ -2510,10 +2510,10 @@ describe("api", () => {
 		expect(moderationLog?.requestedModel).toBe("openai-moderation");
 		expect(moderationLog?.usedModelMapping).toBe("omni-moderation-latest");
 		expect(moderationLog?.usedProvider).toBe("openai");
-		expect(moderationLog?.cost).toBe(0);
+		expect(Number(moderationLog?.cost)).toBeCloseTo(0.00001, 8);
 		expect(moderationLog?.inputCost).toBe(0);
 		expect(moderationLog?.outputCost).toBe(0);
-		expect(moderationLog?.requestCost).toBe(0);
+		expect(Number(moderationLog?.requestCost)).toBeCloseTo(0.00001, 8);
 		expect(moderationLog?.streamed).toBe(false);
 		expect(moderationLog?.finishReason).toBe("stop");
 		expect(moderationLog?.messages).toEqual([
@@ -2626,10 +2626,12 @@ describe("api", () => {
 			expect(failedAttempt?.finishReason).toBe("gateway_error");
 			expect(failedAttempt?.retried).toBe(true);
 			expect(failedAttempt?.retriedByLogId).toBe(successAttempt?.id);
+			expect(failedAttempt?.cost).toBe(0);
 
 			expect(successAttempt).toBeTruthy();
 			expect(successAttempt?.finishReason).toBe("stop");
 			expect(successAttempt?.content).toContain('"flagged":false');
+			expect(Number(successAttempt?.cost)).toBeCloseTo(0.00001, 8);
 		} finally {
 			fetchSpy.mockRestore();
 			resetKeyHealth();
