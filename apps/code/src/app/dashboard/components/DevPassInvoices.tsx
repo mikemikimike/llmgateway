@@ -383,7 +383,9 @@ export default function DevPassInvoices() {
 						</div>
 						<div className="text-right text-sm tabular-nums text-muted-foreground sm:text-right">
 							<span className="text-xs sm:hidden">Credits </span>
-							{formatCredits(invoice.creditAmount)}
+							{/* Refund rows carry creditAmount "0" — a refund never grants
+							    credits, so render the empty marker instead of $0.00. */}
+							{isRefundRow(invoice) ? "—" : formatCredits(invoice.creditAmount)}
 						</div>
 						<div className="col-span-2 mt-1 flex justify-end gap-2 sm:col-span-1 sm:mt-0">
 							{isInvoiceable(invoice) ? (
