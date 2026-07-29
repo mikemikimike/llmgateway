@@ -50,6 +50,7 @@ import {
 	DEV_PLAN_RESET_PASS_PRICES,
 	DEV_PLAN_RESET_PASS_PURCHASE_MAX_CYCLE_USAGE,
 	DEV_PLAN_RESET_PASS_REDEEM_MAX_CYCLE_USAGE,
+	buildRefundDescription,
 	getDevPlanCreditsLimit,
 	getDevPlanCycleUsageFraction,
 	getDevPlanPremiumWeeklyLimit,
@@ -2320,6 +2321,7 @@ devPlans.openapi(getInvoices, async (c) => {
 			.filter((t) => billingEventTypes.includes(t.type))
 			.map((t) => t.id),
 	);
+	const transactionsById = new Map(transactions.map((t) => [t.id, t]));
 	// Refund rows for dev-plan billing events (credit notes); their
 	// relatedTransactionId also flags the refunded original for display.
 	const refundedIds = new Set(
@@ -2354,7 +2356,18 @@ devPlans.openapi(getInvoices, async (c) => {
 			creditAmount: t.creditAmount,
 			currency: t.currency,
 			status: t.status,
-			description: t.description,
+			// Refund rows stored before buildRefundDescription existed read
+			// "Credit refund: …" — rebuild the text from the refunded original
+			// instead of trusting the stored wording.
+			description:
+				t.type === "credit_refund"
+					? buildRefundDescription(
+							Number.parseFloat(t.amount ?? "0"),
+							t.relatedTransactionId
+								? transactionsById.get(t.relatedTransactionId)
+								: null,
+						)
+					: t.description,
 			refunded: refundedIds.has(t.id),
 			refund: isSelfRefundCandidateType(t.type)
 				? computeSelfRefundEligibility({

@@ -64,6 +64,7 @@ import {
 	CHAT_PLAN_PRICES,
 	DEV_PLAN_PRICES,
 	type DevPlanTier,
+	buildRefundDescription,
 	getDevPlanPremiumWeeklyLimit,
 	getIncludedResetPassesRemaining,
 } from "@llmgateway/shared";
@@ -10844,6 +10845,50 @@ const devpassTransactionSchema = z.object({
 	description: z.string().nullable(),
 });
 
+// The originals that credit_refund rows point at (relatedTransactionId), for
+// rebuilding refund descriptions at display time — rows stored before
+// buildRefundDescription existed read "Credit refund: …" regardless of what
+// was refunded.
+async function loadRefundOriginals(
+	transactions: { type: string; relatedTransactionId: string | null }[],
+): Promise<Map<string, { amount: string | null; description: string | null }>> {
+	const ids = [
+		...new Set(
+			transactions
+				.filter((t) => t.type === "credit_refund" && t.relatedTransactionId)
+				.map((t) => t.relatedTransactionId as string),
+		),
+	];
+	if (!ids.length) {
+		return new Map();
+	}
+	const rows = await db.query.transaction.findMany({
+		where: { id: { in: ids } },
+	});
+	return new Map(rows.map((t) => [t.id, t]));
+}
+
+function describeTransaction(
+	t: {
+		type: string;
+		amount: string | null;
+		description: string | null;
+		relatedTransactionId: string | null;
+	},
+	refundOriginals: Map<
+		string,
+		{ amount: string | null; description: string | null }
+	>,
+): string | null {
+	if (t.type !== "credit_refund") {
+		return t.description ?? null;
+	}
+	return buildRefundDescription(
+		Number.parseFloat(t.amount ?? "0"),
+		t.relatedTransactionId ? refundOriginals.get(t.relatedTransactionId) : null,
+	);
+}
+
 const devpassPaymentFailureSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
@@ -12434,6 +12479,7 @@ admin.openapi(getDevpassSubscriber, async (c) => {
 			currency: tables.transaction.currency,
 			status: tables.transaction.status,
 			description: tables.transaction.description,
+			relatedTransactionId: tables.transaction.relatedTransactionId,
 		})
 		.from(tables.transaction)
 		.where(
@@ -12463,6 +12509,8 @@ admin.openapi(getDevpassSubscriber, async (c) => {
 		)
 		.orderBy(desc(tables.transaction.createdAt))
 		.limit(100);
+
+	const refundOriginalsById = await loadRefundOriginals(transactions);
 
 	const paymentFailures = await db
 		.select({
@@ -12501,7 +12549,7 @@ admin.openapi(getDevpassSubscriber, async (c) => {
 			creditAmount: t.creditAmount ?? null,
 			currency: t.currency,
 			status: t.status,
-			description: t.description ?? null,
+			description: describeTransaction(t, refundOriginalsById),
 		})),
 		paymentFailures: paymentFailures.map((p) => ({
 			id: p.id,
@@ -14090,6 +14138,7 @@ admin.openapi(getChatPlansSubscriber, async (c) => {
 			currency: tables.transaction.currency,
 			status: tables.transaction.status,
 			description: tables.transaction.description,
+			relatedTransactionId: tables.transaction.relatedTransactionId,
 		})
 		.from(tables.transaction)
 		.where(
@@ -14112,6 +14161,8 @@ admin.openapi(getChatPlansSubscriber, async (c) => {
 		)
 		.orderBy(desc(tables.transaction.createdAt))
 		.limit(100);
+
+	const refundOriginalsById = await loadRefundOriginals(transactions);
 
 	const paymentFailures = await db
 		.select({
@@ -14138,7 +14189,7 @@ admin.openapi(getChatPlansSubscriber, async (c) => {
 			creditAmount: t.creditAmount ?? null,
 			currency: t.currency,
 			status: t.status,
-			description: t.description ?? null,
+			description: describeTransaction(t, refundOriginalsById),
 		})),
 		paymentFailures: paymentFailures.map((p) => ({
 			id: p.id,

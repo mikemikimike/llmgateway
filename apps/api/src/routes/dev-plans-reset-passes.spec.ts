@@ -733,6 +733,8 @@ describe("reset pass lifecycle and status", () => {
 		expect(refundRow).toBeDefined();
 		expect(refundRow.amount).toBe("29");
 		expect(refundRow.refunded).toBe(false);
+		// Named after the refunded purchase, not the generic "Credit refund".
+		expect(refundRow.description).toBe("Refund: DevPass Reset Pass (PRO)");
 
 		const purchaseRow = body.invoices.find(
 			(i: { type: string }) => i.type === "dev_plan_reset_pass",
