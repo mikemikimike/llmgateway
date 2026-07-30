@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { Info, Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { usePostHog } from "posthog-js/react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -259,6 +260,44 @@ export default function BillingClient({
 
 	if (!devPlanStatus) {
 		return <BillingSkeleton />;
+	}
+
+	// No active plan (never subscribed, ended, or refunded): the subscription
+	// summary, payment method and plan switcher have nothing to manage, but past
+	// invoices — including refunds and credit notes — and the billing details
+	// must stay accessible.
+	if (!devPlanStatus.devPlan || devPlanStatus.devPlan === "none") {
+		return (
+			<div className="space-y-10">
+				<div>
+					<h1 className="text-lg font-semibold tracking-tight">Billing</h1>
+					<p className="mt-0.5 text-sm text-muted-foreground">
+						Your DevPass billing history and invoice details.
+					</p>
+				</div>
+
+				<div className="rounded-xl border bg-card p-6">
+					<div className="flex flex-wrap items-start justify-between gap-4">
+						<div>
+							<h2 className="font-semibold">No active plan</h2>
+							<p className="mt-1 text-sm text-muted-foreground">
+								You don&apos;t have an active DevPass subscription. Your past
+								invoices and billing details stay available below.
+							</p>
+						</div>
+						<Button asChild size="sm">
+							<Link href="/dashboard">Choose a plan</Link>
+						</Button>
+					</div>
+				</div>
+
+				{/* Past invoices */}
+				<DevPassInvoices />
+
+				{/* Billing details (invoice details) */}
+				<DevPassBillingDetails />
+			</div>
+		);
 	}
 
 	const currentPlan = devPlanStatus.devPlan ?? null;

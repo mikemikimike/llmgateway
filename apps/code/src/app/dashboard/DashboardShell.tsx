@@ -441,6 +441,9 @@ export default function DashboardShell({
 
 	const hasActivePlan =
 		devPlanStatus?.devPlan && devPlanStatus.devPlan !== "none";
+	// Billing stays reachable without an active plan so past invoices, refunds
+	// and billing details remain accessible after a cancel or refund.
+	const showShell = hasActivePlan || pathname === "/dashboard/billing";
 	const currentPlanName = devPlanStatus?.devPlan?.toUpperCase() ?? "";
 	const activeSetupActivationStatus =
 		setupActivationStatus ?? (setupSessionId ? "finalizing" : null);
@@ -577,7 +580,7 @@ export default function DashboardShell({
 						<Skeleton className="h-32 w-full rounded-xl" />
 					</main>
 				</div>
-			) : hasActivePlan ? (
+			) : showShell ? (
 				<div className="container mx-auto flex flex-col gap-8 px-4 py-8 lg:flex-row">
 					{/* Sidebar */}
 					<aside className="lg:w-56 lg:shrink-0">
@@ -645,6 +648,16 @@ export default function DashboardShell({
 							subscribingTier={subscribingTier}
 							onSubscribe={handleSubscribe}
 						/>
+
+						<p className="text-center text-sm text-muted-foreground">
+							Subscribed before?{" "}
+							<Link
+								href="/dashboard/billing"
+								className="underline underline-offset-4 hover:text-foreground"
+							>
+								View your billing history
+							</Link>
+						</p>
 					</div>
 				</main>
 			)}
