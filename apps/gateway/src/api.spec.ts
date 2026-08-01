@@ -1258,6 +1258,302 @@ describe("api", () => {
 		expect(res.status).toBe(200);
 	});
 
+	test("/v1/chat/completions blocks a provider on the policy's blockedProviders list", async () => {
+		// OpenAI meets every attribute requirement here (none are set); the deny
+		// list alone blocks it.
+		await db
+			.update(tables.organization)
+			.set({
+				plan: "enterprise",
+				providerCompliancePolicy: {
+					enabled: true,
+					blockedProviders: ["openai"],
+				},
+			})
+			.where(eq(tables.organization.id, "org-id"));
+
+		await db.insert(tables.apiKey).values({
+			id: "token-id-blocked-provider",
+			token: "real-token-blocked-provider",
+			projectId: "project-id",
+			description: "Test API Key",
+			createdBy: "user-id",
+		});
+
+		await db.insert(tables.providerKey).values({
+			id: "provider-key-id-blocked-provider",
+			token: "sk-test-key",
+			provider: "openai",
+			organizationId: "org-id",
+			baseUrl: mockServerUrl,
+		});
+
+		const res = await app.request("/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer real-token-blocked-provider",
+				"x-no-fallback": "true",
+			},
+			body: JSON.stringify({
+				model: "openai/gpt-4o",
+				messages: [{ role: "user", content: "Hello blocked provider!" }],
+			}),
+		});
+
+		expect(res.status).toBe(403);
+		const json = await res.json();
+		expect(json.error.message).toContain("provider compliance policy");
+
+		const violations = await db.query.guardrailViolation.findMany({
+			where: { organizationId: { eq: "org-id" } },
+		});
+		expect(violations.some((v) => v.category === "provider_compliance")).toBe(
+			true,
+		);
+	});
+
+	test("/v1/chat/completions org policy overrides API-key IAM allow rules", async () => {
+		// The org policy always takes precedence: an explicit allow_providers
+		// rule on the API key cannot grant access to a policy-blocked provider.
+		await db
+			.update(tables.organization)
+			.set({
+				plan: "enterprise",
+				providerCompliancePolicy: {
+					enabled: true,
+					blockedProviders: ["openai"],
+				},
+			})
+			.where(eq(tables.organization.id, "org-id"));
+
+		await db.insert(tables.apiKey).values({
+			id: "token-id-policy-over-iam",
+			token: "real-token-policy-over-iam",
+			projectId: "project-id",
+			description: "Test API Key",
+			createdBy: "user-id",
+		});
+
+		await db.insert(tables.apiKeyIamRule).values({
+			id: "iam-allow-openai-policy-over-iam",
+			apiKeyId: "token-id-policy-over-iam",
+			ruleType: "allow_providers",
+			ruleValue: { providers: ["openai"] },
+			status: "active",
+		});
+
+		await db.insert(tables.providerKey).values({
+			id: "provider-key-id-policy-over-iam",
+			token: "sk-test-key",
+			provider: "openai",
+			organizationId: "org-id",
+			baseUrl: mockServerUrl,
+		});
+
+		const res = await app.request("/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer real-token-policy-over-iam",
+				"x-no-fallback": "true",
+			},
+			body: JSON.stringify({
+				model: "openai/gpt-4o",
+				messages: [{ role: "user", content: "Hello policy precedence!" }],
+			}),
+		});
+
+		expect(res.status).toBe(403);
+		expect((await res.json()).error.message).toContain(
+			"provider compliance policy",
+		);
+	});
+
+	test("/v1/chat/completions blocks providers absent from allowedProviders", async () => {
+		// A non-empty allow list without OpenAI blocks the pinned request.
+		await db
+			.update(tables.organization)
+			.set({
+				plan: "enterprise",
+				providerCompliancePolicy: {
+					enabled: true,
+					allowedProviders: ["anthropic"],
+				},
+			})
+			.where(eq(tables.organization.id, "org-id"));
+
+		await db.insert(tables.apiKey).values({
+			id: "token-id-allowed-provider-block",
+			token: "real-token-allowed-provider-block",
+			projectId: "project-id",
+			description: "Test API Key",
+			createdBy: "user-id",
+		});
+
+		await db.insert(tables.providerKey).values({
+			id: "provider-key-id-allowed-provider-block",
+			token: "sk-test-key",
+			provider: "openai",
+			organizationId: "org-id",
+			baseUrl: mockServerUrl,
+		});
+
+		const res = await app.request("/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer real-token-allowed-provider-block",
+				"x-no-fallback": "true",
+			},
+			body: JSON.stringify({
+				model: "openai/gpt-4o",
+				messages: [{ role: "user", content: "Hello allow list block!" }],
+			}),
+		});
+
+		expect(res.status).toBe(403);
+		expect((await res.json()).error.message).toContain(
+			"provider compliance policy",
+		);
+	});
+
+	test("/v1/chat/completions allows providers on allowedProviders", async () => {
+		await db
+			.update(tables.organization)
+			.set({
+				plan: "enterprise",
+				providerCompliancePolicy: {
+					enabled: true,
+					allowedProviders: ["anthropic", "openai"],
+				},
+			})
+			.where(eq(tables.organization.id, "org-id"));
+
+		await db.insert(tables.apiKey).values({
+			id: "token-id-allowed-provider-pass",
+			token: "real-token-allowed-provider-pass",
+			projectId: "project-id",
+			description: "Test API Key",
+			createdBy: "user-id",
+		});
+
+		await db.insert(tables.providerKey).values({
+			id: "provider-key-id-allowed-provider-pass",
+			token: "sk-test-key",
+			provider: "openai",
+			organizationId: "org-id",
+			baseUrl: mockServerUrl,
+		});
+
+		const res = await app.request("/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer real-token-allowed-provider-pass",
+				"x-no-fallback": "true",
+			},
+			body: JSON.stringify({
+				model: "openai/gpt-4o",
+				messages: [{ role: "user", content: "Hello allow list pass!" }],
+			}),
+		});
+
+		expect(res.status).toBe(200);
+	});
+
+	test("/v1/chat/completions blocks a model on the policy's blockedModels list", async () => {
+		await db
+			.update(tables.organization)
+			.set({
+				plan: "enterprise",
+				providerCompliancePolicy: {
+					enabled: true,
+					blockedModels: ["gpt-4o"],
+				},
+			})
+			.where(eq(tables.organization.id, "org-id"));
+
+		await db.insert(tables.apiKey).values({
+			id: "token-id-blocked-model",
+			token: "real-token-blocked-model",
+			projectId: "project-id",
+			description: "Test API Key",
+			createdBy: "user-id",
+		});
+
+		await db.insert(tables.providerKey).values({
+			id: "provider-key-id-blocked-model",
+			token: "sk-test-key",
+			provider: "openai",
+			organizationId: "org-id",
+			baseUrl: mockServerUrl,
+		});
+
+		const request = (model: string, content: string) =>
+			app.request("/v1/chat/completions", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: "Bearer real-token-blocked-model",
+					"x-no-fallback": "true",
+				},
+				body: JSON.stringify({
+					model,
+					messages: [{ role: "user", content }],
+				}),
+			});
+
+		const blocked = await request("openai/gpt-4o", "Hello blocked model!");
+		expect(blocked.status).toBe(403);
+		expect((await blocked.json()).error.message).toContain(
+			"provider compliance policy",
+		);
+
+		// A sibling model on the same provider is unaffected.
+		const allowed = await request("openai/gpt-4o-mini", "Hello allowed model!");
+		expect(allowed.status).toBe(200);
+	});
+
+	test("/v1/chat/completions blocks an individually restricted custom provider", async () => {
+		// The attestation satisfies the policy, but the custom provider is on the
+		// deny list via its custom:<name> ref.
+		await seedCustomProviderCompliance({
+			policy: {
+				enabled: true,
+				requireSoc2: true,
+				blockedProviders: ["custom:mycustom"],
+			},
+			attestation: { soc2: 2 },
+		});
+
+		const res = await requestCustomProvider();
+
+		expect(res.status).toBe(403);
+		expect((await res.json()).error.message).toContain(
+			"provider compliance policy",
+		);
+	});
+
+	test("/v1/chat/completions blocks a custom model via its <provider>/<model> ref", async () => {
+		await seedCustomProviderCompliance({
+			policy: {
+				enabled: true,
+				blockedModels: ["mycustom/gpt-4o-mini"],
+			},
+			attestation: { soc2: 2 },
+		});
+
+		const blocked = await requestCustomProvider("mycustom/gpt-4o-mini");
+		expect(blocked.status).toBe(403);
+		expect((await blocked.json()).error.message).toContain(
+			"provider compliance policy",
+		);
+
+		const allowed = await requestCustomProvider("mycustom/gpt-4o");
+		expect(allowed.status).toBe(200);
+	});
+
 	test("/v1/chat/completions rejects unsupported service tiers", async () => {
 		await db.insert(tables.apiKey).values({
 			id: "token-id-unsupported-service-tier",
@@ -1301,6 +1597,76 @@ describe("api", () => {
 		expect(logs[0].errorDetails?.cause).toBe("unsupported_service_tier");
 		expect(logs[0].errorDetails?.responseText).toContain(
 			"Service tier 'priority' is not available",
+		);
+	});
+
+	test("/v1/chat/completions rejects flex on Fireworks, which only sells priority", async () => {
+		await db.insert(tables.apiKey).values({
+			id: "token-id-fireworks-flex",
+			token: "real-token-fireworks-flex",
+			projectId: "project-id",
+			description: "Test API Key",
+			createdBy: "user-id",
+		});
+
+		const res = await app.request("/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer real-token-fireworks-flex",
+			},
+			body: JSON.stringify({
+				model: "fireworks/kimi-k3",
+				service_tier: "flex",
+				messages: [{ role: "user", content: "Hello!" }],
+			}),
+		});
+
+		expect(res.status).toBe(400);
+		const json = await res.json();
+		expect(json.error).toMatchObject({
+			param: "service_tier",
+			code: "unsupported_service_tier",
+		});
+	});
+
+	test("/v1/chat/completions rejects a Fireworks tier request on a proxied key", async () => {
+		await db.insert(tables.apiKey).values({
+			id: "token-id-fireworks-proxy-tier",
+			token: "real-token-fireworks-proxy-tier",
+			projectId: "project-id",
+			description: "Test API Key",
+			createdBy: "user-id",
+		});
+
+		// Fireworks never reports the tier it served, so a priority request is
+		// billed at the tier it was sent at. A proxy base URL may silently drop
+		// the field, which would overbill — the request must be rejected instead.
+		await db.insert(tables.providerKey).values({
+			id: "provider-key-id-fireworks-proxy-tier",
+			token: "sk-test-key",
+			provider: "fireworks",
+			organizationId: "org-id",
+			baseUrl: mockServerUrl,
+		});
+
+		const res = await app.request("/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer real-token-fireworks-proxy-tier",
+			},
+			body: JSON.stringify({
+				model: "fireworks/kimi-k3",
+				service_tier: "priority",
+				messages: [{ role: "user", content: "Hello!" }],
+			}),
+		});
+
+		expect(res.status).toBe(400);
+		const json = await res.json();
+		expect(json.error.message).toContain(
+			"requires a provider key that targets the original upstream endpoint",
 		);
 	});
 
