@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	getSupportedServiceTiers,
-	isStealthProvider,
-	supportsServiceTier,
-} from "./helpers.js";
+import { getSupportedServiceTiers, supportsServiceTier } from "./helpers.js";
 import { anthropicModels } from "./models/anthropic.js";
 import { models } from "./models.js";
 import {
 	formatServiceTierMultiplier,
 	getServiceTier,
+	isStealthProvider,
 	providers,
 } from "./providers.js";
 import {
@@ -90,6 +87,32 @@ describe("model service tier support", () => {
 			)?.multiplier,
 		).toBe(2);
 		expect(
+			getSupportedServiceTiers("gpt-5.1", "openai").map((tier) => tier.id),
+		).toEqual(["flex", "priority"]);
+		expect(
+			getSupportedServiceTiers("gpt-5.1", "openai").find(
+				(tier) => tier.id === "priority",
+			)?.multiplier,
+		).toBe(2);
+		expect(
+			getSupportedServiceTiers("gpt-5.2", "openai").map((tier) => tier.id),
+		).toEqual(["flex", "priority"]);
+		expect(
+			getSupportedServiceTiers("gpt-5.2", "openai").find(
+				(tier) => tier.id === "priority",
+			)?.multiplier,
+		).toBe(2);
+		expect(
+			getSupportedServiceTiers("gpt-5.1-codex", "openai").map(
+				(tier) => tier.id,
+			),
+		).toEqual(["priority"]);
+		expect(
+			getSupportedServiceTiers("gpt-5.1-codex", "openai").find(
+				(tier) => tier.id === "priority",
+			)?.multiplier,
+		).toBe(2);
+		expect(
 			getSupportedServiceTiers("gpt-5.5-pro", "openai").map((tier) => tier.id),
 		).toEqual(["flex"]);
 		expect(
@@ -126,6 +149,22 @@ describe("model service tier support", () => {
 				"google-vertex",
 			).map((tier) => tier.id),
 		).toEqual(["flex"]);
+	});
+
+	it("returns the Fireworks Priority tier for Kimi K3 only", () => {
+		expect(
+			getSupportedServiceTiers("kimi-k3", "fireworks").map((tier) => tier.id),
+		).toEqual(["priority"]);
+		expect(
+			getSupportedServiceTiers("kimi-k3", "fireworks").find(
+				(tier) => tier.id === "priority",
+			)?.multiplier,
+		).toBe(1.25);
+		// Fireworks' schema accepts "flex", but it has no published flex rate
+		// card, so the gateway must not route flex traffic there.
+		expect(supportsServiceTier("kimi-k3", "fireworks", "flex")).toBe(false);
+		// Other providers serving the same model expose no tiers.
+		expect(getSupportedServiceTiers("kimi-k3", "novita")).toEqual([]);
 	});
 
 	it("returns explicit Google AI Studio tiers for supported models", () => {
@@ -196,7 +235,14 @@ describe("model service tier support", () => {
 
 describe("isStealthProvider", () => {
 	it("flags providers that require a baseUrl env var (no default endpoint)", () => {
-		for (const id of ["glacier", "granite", "quartz", "avalanche", "tundra"]) {
+		for (const id of [
+			"glacier",
+			"iceberg",
+			"granite",
+			"quartz",
+			"avalanche",
+			"tundra",
+		]) {
 			expect(isStealthProvider(id)).toBe(true);
 		}
 	});
@@ -380,7 +426,7 @@ describe("AtlasCloud video models", () => {
 		expect(provider?.privacyPolicyUrl).toBe(
 			"https://www.atlascloud.ai/privacy",
 		);
-		expect(provider?.dataPolicy?.soc2).toBe(true);
+		expect(provider?.dataPolicy?.soc2).toBe(2);
 		expect(provider?.dataPolicy?.gdpr).toBe(true);
 		expect(provider?.additionalLinks).toEqual(
 			expect.arrayContaining([
@@ -443,8 +489,7 @@ describe("AtlasCloud video models", () => {
 			supportsVideoWithoutAudio,
 		] of expected) {
 			const model = models.find((candidate) => candidate.id === modelId) as
-				| ModelDefinition
-				| undefined;
+				ModelDefinition | undefined;
 			const mapping = model?.providers.find(
 				(provider) => provider.providerId === "atlascloud",
 			) as ProviderModelMapping | undefined;

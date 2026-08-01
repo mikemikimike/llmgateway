@@ -3,9 +3,12 @@ import { features } from "@/lib/features";
 import { slugify } from "@/lib/slugify";
 
 import {
+	getProviderCountries,
 	models as modelDefinitions,
 	providers as providerDefinitions,
+	type ModelDefinition,
 } from "@llmgateway/models";
+import { isMappingDeactivated } from "@llmgateway/shared/components";
 
 import type { MetadataRoute } from "next";
 
@@ -111,7 +114,37 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 			priority: 0.8,
 		},
 		{
+			url: `${baseUrl}/rankings`,
+			lastModified: buildDate,
+			changeFrequency: "daily",
+			priority: 0.8,
+		},
+		{
 			url: `${baseUrl}/enterprise`,
+			lastModified: buildDate,
+			changeFrequency: "monthly",
+			priority: 0.8,
+		},
+		{
+			url: `${baseUrl}/products/ai-gateway`,
+			lastModified: buildDate,
+			changeFrequency: "monthly",
+			priority: 0.8,
+		},
+		{
+			url: `${baseUrl}/products/lounge`,
+			lastModified: buildDate,
+			changeFrequency: "monthly",
+			priority: 0.8,
+		},
+		{
+			url: `${baseUrl}/products/devpass`,
+			lastModified: buildDate,
+			changeFrequency: "monthly",
+			priority: 0.8,
+		},
+		{
+			url: `${baseUrl}/products/observability`,
 			lastModified: buildDate,
 			changeFrequency: "monthly",
 			priority: 0.8,
@@ -166,6 +199,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 		},
 		{
 			url: `${baseUrl}/token-cost-calculator`,
+			lastModified: buildDate,
+			changeFrequency: "weekly",
+			priority: 0.9,
+		},
+		{
+			url: `${baseUrl}/copilot-cost-calculator`,
 			lastModified: buildDate,
 			changeFrequency: "weekly",
 			priority: 0.9,
@@ -297,6 +336,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 			priority: 0.8,
 		},
 		{
+			url: `${baseUrl}/models/premium`,
+			lastModified: buildDate,
+			changeFrequency: "weekly",
+			priority: 0.8,
+		},
+		{
 			url: `${baseUrl}/mcp`,
 			lastModified: buildDate,
 			changeFrequency: "monthly",
@@ -328,6 +373,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 		},
 		{
 			url: `${baseUrl}/compare/azure-ai-foundry`,
+			lastModified: buildDate,
+			changeFrequency: "monthly",
+			priority: 0.7,
+		},
+		{
+			url: `${baseUrl}/compare/github-copilot`,
 			lastModified: buildDate,
 			changeFrequency: "monthly",
 			priority: 0.7,
@@ -366,7 +417,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
 	// Model pages
 	const modelPages: MetadataRoute.Sitemap = [];
-	for (const model of modelDefinitions) {
+	for (const model of modelDefinitions as readonly ModelDefinition[]) {
+		// Fully deactivated models are hidden from the public directory, so they
+		// are not advertised for crawling either (the pages still resolve).
+		if (
+			model.providers.length > 0 &&
+			model.providers.every((p) => isMappingDeactivated(p))
+		) {
+			continue;
+		}
+
 		// Main model page
 		modelPages.push({
 			url: `${baseUrl}/models/${encodeURIComponent(model.id)}`,
@@ -389,6 +449,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 			lastModified: buildDate,
 			changeFrequency: "weekly",
 			priority: 0.8,
+		}));
+
+	// Per-country provider pages
+	const providerCountryPages: MetadataRoute.Sitemap =
+		getProviderCountries().map((country) => ({
+			url: `${baseUrl}/providers/country/${country.code.toLowerCase()}`,
+			lastModified: buildDate,
+			changeFrequency: "weekly",
+			priority: 0.7,
 		}));
 
 	// Feature pages
@@ -500,6 +569,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 		...timelineYearPages,
 		...modelPages,
 		...providerPages,
+		...providerCountryPages,
 		...featurePages,
 		...enterpriseFeaturePages,
 		...blogPages,

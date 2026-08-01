@@ -111,6 +111,24 @@ export default function Footer() {
 								</li>
 								<li>
 									<Link
+										href="/products/ai-gateway"
+										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
+										prefetch={true}
+									>
+										AI Gateway
+									</Link>
+								</li>
+								<li>
+									<Link
+										href="/products/observability"
+										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
+										prefetch={true}
+									>
+										Observability
+									</Link>
+								</li>
+								<li>
+									<Link
 										href="/models"
 										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
 										prefetch={true}
@@ -128,14 +146,31 @@ export default function Footer() {
 									</Link>
 								</li>
 								<li>
-									<a
-										href={config.playgroundUrl}
+									<Link
+										href="/rankings"
 										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
-										rel="noopener"
-										target="_blank"
+										prefetch={true}
 									>
-										Chat Playground
-									</a>
+										Rankings
+									</Link>
+								</li>
+								<li>
+									<Link
+										href="/add-provider"
+										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
+										prefetch={true}
+									>
+										Add Provider
+									</Link>
+								</li>
+								<li>
+									<Link
+										href="/products/lounge"
+										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
+										prefetch={true}
+									>
+										Lounge
+									</Link>
 								</li>
 								<li>
 									<Link
@@ -147,12 +182,13 @@ export default function Footer() {
 									</Link>
 								</li>
 								<li>
-									<a
-										href="https://devpass.llmgateway.io"
+									<Link
+										href="/products/devpass"
 										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
+										prefetch={true}
 									>
 										DevPass
-									</a>
+									</Link>
 								</li>
 								<li>
 									<Link
@@ -276,6 +312,15 @@ export default function Footer() {
 										prefetch
 									>
 										Token Cost Calculator
+									</Link>
+								</li>
+								<li>
+									<Link
+										href="/copilot-cost-calculator"
+										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
+										prefetch
+									>
+										Copilot Cost Calculator
 									</Link>
 								</li>
 								<li>
@@ -416,6 +461,15 @@ export default function Footer() {
 								Compare
 							</h3>
 							<ul className="space-y-2">
+								<li>
+									<Link
+										href="/compare/github-copilot"
+										className="text-sm hover:underline underline-offset-4 hover:text-foreground"
+										prefetch={true}
+									>
+										GitHub Copilot
+									</Link>
+								</li>
 								<li>
 									<Link
 										href="/compare/open-router"

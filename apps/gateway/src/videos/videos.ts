@@ -26,6 +26,7 @@ import {
 	complianceBlockMessage,
 	filterCompliantProviders,
 	getActiveCompliancePolicy,
+	isModelIdCompliant,
 	isProviderIdCompliant,
 	logComplianceBlock,
 } from "@/lib/compliance.js";
@@ -60,6 +61,8 @@ import {
 } from "@llmgateway/db";
 import { logger, toError } from "@llmgateway/logger";
 import {
+	type EnvVarVariant,
+	getOrganizationEnvVariant,
 	getProviderEnvValue,
 	getProviderEnvVar,
 	hasProviderEnvironmentToken,
@@ -229,7 +232,13 @@ const videoImageInputSchema = z
 		},
 	});
 
-const videoReferenceImagesSchema = z.array(videoImageInputSchema).min(1).max(3);
+const SEEDANCE_2_MAX_REFERENCE_IMAGES = 9;
+const DEFAULT_MAX_REFERENCE_IMAGES = 3;
+
+const videoReferenceImagesSchema = z
+	.array(videoImageInputSchema)
+	.min(1)
+	.max(SEEDANCE_2_MAX_REFERENCE_IMAGES);
 
 const referenceVideoUrlSchema = z
 	.string()
@@ -340,7 +349,7 @@ const createVideoRequestSchema = z
 		image: videoImageInputSchema.optional(),
 		reference_images: videoReferenceImagesSchema.optional().openapi({
 			description:
-				"One to three reference images for provider-specific asset or material-guided video generation.",
+				"Reference images for provider-specific asset or material-guided video generation. ByteDance Seedance 2.0 models accept up to 9; other providers accept up to 3.",
 			example: [
 				{
 					image_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
@@ -624,6 +633,7 @@ function resolveVideoVertexTokenType(
 	providerId: Provider,
 	providerKey: InferSelectModel<typeof tables.providerKey> | undefined,
 	configIndex: number | null,
+	variant?: EnvVarVariant,
 ): VertexTokenType | undefined {
 	if (providerId !== "google-vertex") {
 		return undefined;
@@ -640,6 +650,7 @@ function resolveVideoVertexTokenType(
 				undefined,
 				configIndex ?? undefined,
 				false,
+				variant,
 			);
 }
 
@@ -1069,6 +1080,10 @@ function getVideoProviderConstraintReasons(
 				reasons.push(
 					"reference inputs are currently only supported on bytedance Seedance 2.0 (seedance-2-0, seedance-2-0-fast, seedance-2-0-mini)",
 				);
+			} else if (inputImageCount > SEEDANCE_2_MAX_REFERENCE_IMAGES) {
+				reasons.push(
+					`Seedance 2.0 supports at most ${SEEDANCE_2_MAX_REFERENCE_IMAGES} reference images`,
+				);
 			}
 
 			return reasons;
@@ -1083,6 +1098,12 @@ function getVideoProviderConstraintReasons(
 		if (referenceAudioCount > 0) {
 			reasons.push(
 				"reference audio is currently only supported on bytedance Seedance 2.0 models",
+			);
+		}
+
+		if (inputImageCount > DEFAULT_MAX_REFERENCE_IMAGES) {
+			reasons.push(
+				`this provider mapping supports at most ${DEFAULT_MAX_REFERENCE_IMAGES} reference images`,
 			);
 		}
 
@@ -1423,6 +1444,11 @@ async function resolveProviderContext(
 			"us-central1")
 		: undefined;
 
+	// Which env-var variant (`__ENTERPRISE` / `__PLANS` overrides) applies to
+	// this org's env-credential reads. Undefined = base vars only.
+	const organization = await findOrganizationById(organizationId);
+	const envVariant = getOrganizationEnvVariant(organization);
+
 	if (project.mode === "api-keys") {
 		const providerKey = await findProviderKey(
 			organizationId,
@@ -1480,10 +1506,16 @@ async function resolveProviderContext(
 		const env = getProviderEnv(providerId, {
 			excludedIndices: getVideoExcludedConfigIndices(providerId),
 			selectionScope,
+			variant: envVariant,
 		});
 		const baseUrl =
-			getProviderEnvValue(providerId, "baseUrl", env.configIndex) ??
-			defaultBaseUrl;
+			getProviderEnvValue(
+				providerId,
+				"baseUrl",
+				env.configIndex,
+				undefined,
+				envVariant,
+			) ?? defaultBaseUrl;
 		if (!baseUrl) {
 			throw new HTTPException(500, {
 				message: `Base URL environment variable is required for ${providerId} provider`,
@@ -1491,7 +1523,13 @@ async function resolveProviderContext(
 		}
 
 		const vertexProjectId = isGoogleVertexVideoProvider(providerId)
-			? getProviderEnvValue(providerId, "project", env.configIndex)
+			? getProviderEnvValue(
+					providerId,
+					"project",
+					env.configIndex,
+					undefined,
+					envVariant,
+				)
 			: undefined;
 		const vertexRegion = isGoogleVertexVideoProvider(providerId)
 			? (getProviderEnvValue(
@@ -1499,6 +1537,7 @@ async function resolveProviderContext(
 					"region",
 					env.configIndex,
 					"us-central1",
+					envVariant,
 				) ?? "us-central1")
 			: undefined;
 
@@ -1521,6 +1560,7 @@ async function resolveProviderContext(
 				providerId,
 				undefined,
 				env.configIndex,
+				envVariant,
 			),
 			uploadBaseUrl:
 				providerId === "avalanche"
@@ -1528,6 +1568,8 @@ async function resolveProviderContext(
 							providerId,
 							"fileUploadBaseUrl",
 							env.configIndex,
+							undefined,
+							envVariant,
 						)
 					: undefined,
 		};
@@ -1590,10 +1632,16 @@ async function resolveProviderContext(
 
 	const env = getProviderEnv(providerId, {
 		excludedIndices: getVideoExcludedConfigIndices(providerId),
+		variant: envVariant,
 	});
 	const baseUrl =
-		getProviderEnvValue(providerId, "baseUrl", env.configIndex) ??
-		defaultBaseUrl;
+		getProviderEnvValue(
+			providerId,
+			"baseUrl",
+			env.configIndex,
+			undefined,
+			envVariant,
+		) ?? defaultBaseUrl;
 	if (!baseUrl) {
 		throw new HTTPException(500, {
 			message: `Base URL environment variable is required for ${providerId} provider`,
@@ -1601,7 +1649,13 @@ async function resolveProviderContext(
 	}
 
 	const vertexProjectId = isGoogleVertexVideoProvider(providerId)
-		? getProviderEnvValue(providerId, "project", env.configIndex)
+		? getProviderEnvValue(
+				providerId,
+				"project",
+				env.configIndex,
+				undefined,
+				envVariant,
+			)
 		: undefined;
 	const vertexRegion = isGoogleVertexVideoProvider(providerId)
 		? (getProviderEnvValue(
@@ -1609,6 +1663,7 @@ async function resolveProviderContext(
 				"region",
 				env.configIndex,
 				"us-central1",
+				envVariant,
 			) ?? "us-central1")
 		: undefined;
 
@@ -1629,7 +1684,13 @@ async function resolveProviderContext(
 		vertexRegion,
 		uploadBaseUrl:
 			providerId === "avalanche"
-				? getProviderEnvValue(providerId, "fileUploadBaseUrl", env.configIndex)
+				? getProviderEnvValue(
+						providerId,
+						"fileUploadBaseUrl",
+						env.configIndex,
+						undefined,
+						envVariant,
+					)
 				: undefined,
 	};
 
@@ -1653,11 +1714,11 @@ async function hasVideoProviderConfiguration(
 		);
 		return Boolean(
 			providerKey &&
-				(providerKey.baseUrl ??
-					getProviderEnvValue(providerId, "baseUrl") ??
-					defaultBaseUrl) &&
-				(!isGoogleVertexVideoProvider(providerId) ||
-					Boolean(getProviderEnvValue(providerId, "project"))),
+			(providerKey.baseUrl ??
+				getProviderEnvValue(providerId, "baseUrl") ??
+				defaultBaseUrl) &&
+			(!isGoogleVertexVideoProvider(providerId) ||
+				Boolean(getProviderEnvValue(providerId, "project"))),
 		);
 	}
 
@@ -1677,8 +1738,8 @@ async function hasVideoProviderConfiguration(
 			(providerKey.baseUrl ??
 				getProviderEnvValue(providerId, "baseUrl") ??
 				defaultBaseUrl) &&
-				(!isGoogleVertexVideoProvider(providerId) ||
-					Boolean(getProviderEnvValue(providerId, "project"))),
+			(!isGoogleVertexVideoProvider(providerId) ||
+				Boolean(getProviderEnvValue(providerId, "project"))),
 		);
 	}
 
@@ -2555,13 +2616,25 @@ async function resolveVideoJobProviderContext(job: VideoJobRecord): Promise<{
 		};
 	}
 
+	// Polls/content retrieval must use the same credential class as job
+	// creation: some providers scope job visibility to the creating API key,
+	// so an enterprise/plan org's job created with a variant env override
+	// must also be polled with it.
+	const organization = await findOrganizationById(job.organizationId);
+	const envVariant = getOrganizationEnvVariant(organization);
 	const env = getProviderEnv(providerId, {
 		excludedIndices: getVideoExcludedConfigIndices(providerId),
 		selectionScope: job.usedModel,
+		variant: envVariant,
 	});
 	const baseUrl =
-		getProviderEnvValue(providerId, "baseUrl", env.configIndex) ??
-		defaultBaseUrl;
+		getProviderEnvValue(
+			providerId,
+			"baseUrl",
+			env.configIndex,
+			undefined,
+			envVariant,
+		) ?? defaultBaseUrl;
 	if (!baseUrl) {
 		throw new HTTPException(500, {
 			message: `Base URL environment variable is required for ${providerId} provider`,
@@ -2773,17 +2846,7 @@ async function fetchUpstreamJson(
 		});
 		throw new HTTPException(
 			response.status as
-				| 400
-				| 401
-				| 403
-				| 404
-				| 409
-				| 422
-				| 429
-				| 500
-				| 502
-				| 503
-				| 504,
+				400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 502 | 503 | 504,
 			{
 				message:
 					typeof body.error === "object" &&
@@ -3653,8 +3716,7 @@ async function createMinimaxVideoJob(
 	});
 
 	const baseResp = rawResponse.base_resp as
-		| { status_code?: number; status_msg?: string }
-		| undefined;
+		{ status_code?: number; status_msg?: string } | undefined;
 	if (baseResp && baseResp.status_code !== 0) {
 		throw new HTTPException(502, {
 			message: `MiniMax video API error: ${baseResp.status_msg ?? "unknown error"} (code ${baseResp.status_code})`,
@@ -4156,6 +4218,7 @@ async function insertVideoClientErrorLog(options: {
 	const responseText = options.message;
 	await db.insert(tables.log).values({
 		requestId: options.requestId,
+		apiOrigin: "videos",
 		organizationId: options.organization.id,
 		projectId: options.project.id,
 		apiKeyId: options.apiKey.id,
@@ -4361,13 +4424,14 @@ videos.openapi(createVideo, async (c) => {
 		request.seconds,
 	);
 
-	const iamValidation = await validateRequestModelAccess(
+	const iamValidation = await validateRequestModelAccess({
 		apiKey,
-		normalizedModel,
+		organizationId: project.organizationId,
+		requestedModel: normalizedModel,
 		requestedProvider,
-		modelInfo,
-		getClientIpFromRequest(c),
-	);
+		activeModelInfo: modelInfo,
+		clientIp: getClientIpFromRequest(c),
+	});
 
 	if (!iamValidation.allowed) {
 		throw new HTTPException(403, {
@@ -4385,11 +4449,16 @@ videos.openapi(createVideo, async (c) => {
 		const pinnedBlocked =
 			requestedProvider !== undefined &&
 			!isProviderIdCompliant(requestedProvider, videoCompliancePolicy);
+		// The policy's model lists block the model outright.
+		const modelBlocked = !isModelIdCompliant(
+			modelInfo.id,
+			videoCompliancePolicy,
+		);
 		const compliantProviders = filterCompliantProviders(
 			modelInfo.providers as ProviderModelMapping[],
 			videoCompliancePolicy,
 		);
-		if (pinnedBlocked || compliantProviders.length === 0) {
+		if (pinnedBlocked || modelBlocked || compliantProviders.length === 0) {
 			await logComplianceBlock(project.organizationId, {
 				apiKeyId: apiKey.id,
 				model: normalizedModel,

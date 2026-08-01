@@ -3,7 +3,6 @@ import "dotenv/config";
 
 import { swaggerUI } from "@hono/swagger-ui";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
-import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
@@ -13,7 +12,7 @@ import {
 	UnsupportedAudioFormatError,
 	UnsupportedDocumentFormatError,
 } from "@llmgateway/actions";
-import { redisClient } from "@llmgateway/cache";
+import { redisClient, storageRedisClient } from "@llmgateway/cache";
 import { db } from "@llmgateway/db";
 import {
 	createHonoRequestLogger,
@@ -24,17 +23,24 @@ import { HealthChecker } from "@llmgateway/shared";
 
 import { anthropic } from "./anthropic/anthropic.js";
 import { chat } from "./chat/chat.js";
+import { extractErrorCause } from "./chat/tools/extract-error-cause.js";
+import { isUpstreamTermination } from "./chat/tools/normalize-streaming-error.js";
 import { embeddingsRoute } from "./embeddings/route.js";
 import { imagesRoute } from "./images/route.js";
+import { keyRoute } from "./key/route.js";
 import { backpressureMiddleware } from "./lib/backpressure.js";
 import { renderGatewayError } from "./lib/error-response.js";
 import { mcpHandler, registerMcpOAuthRoutes } from "./mcp/mcp.js";
+import { corsMiddleware } from "./middleware/cors.js";
 import { tracingMiddleware } from "./middleware/tracing.js";
 import { models } from "./models/route.js";
 import { moderationsRoute } from "./moderations/route.js";
 import { ocrRoute } from "./ocr/route.js";
+import { realtimeClientSecretsRoute } from "./realtime/client-secrets-route.js";
+import { rerankRoute } from "./rerank/route.js";
 import { responses } from "./responses/responses.js";
 import { speechRoute } from "./speech/route.js";
+import { transcriptionsRoute } from "./transcriptions/route.js";
 import { videosRoute } from "./videos/route.js";
 
 import type { ServerTypes } from "./vars.js";
@@ -80,23 +86,7 @@ const requestLifecycleMiddleware = createRequestLifecycleMiddleware({
 app.use("*", tracingMiddleware);
 app.use("*", requestLifecycleMiddleware);
 app.use("*", honoRequestLogger);
-
-app.use(
-	"*",
-	cors({
-		origin: "*",
-		allowHeaders: [
-			"Content-Type",
-			"Authorization",
-			"Cache-Control",
-			"x-api-key",
-			"mcp-session-id",
-		],
-		allowMethods: ["POST", "GET", "OPTIONS", "PUT", "PATCH", "DELETE"],
-		exposeHeaders: ["Content-Length", "mcp-session-id"],
-		maxAge: 600,
-	}),
-);
+app.use("*", corsMiddleware);
 
 // Shed excess load early (after logging/CORS, before auth/routing) so each pod
 // fast-fails with a retryable 529 instead of piling up unbounded connections.
@@ -108,12 +98,14 @@ app.use("*", backpressureMiddleware);
 // Excludes /mcp endpoint which handles its own content type validation
 // Excludes /oauth endpoints which accept form-urlencoded or JSON
 // Excludes /v1/images endpoints which accept multipart/form-data for file uploads
+// Excludes /v1/audio/transcriptions which accepts multipart/form-data audio uploads
 app.use("*", async (c, next) => {
 	if (
 		c.req.method === "POST" &&
 		!c.req.path.startsWith("/mcp") &&
 		!c.req.path.startsWith("/oauth") &&
-		!c.req.path.startsWith("/v1/images")
+		!c.req.path.startsWith("/v1/images") &&
+		!c.req.path.startsWith("/v1/audio/transcriptions")
 	) {
 		const contentType = c.req.header("Content-Type");
 		if (!contentType || !contentType.includes("application/json")) {
@@ -199,6 +191,20 @@ app.onError((error, c) => {
 			method: c.req.method,
 		});
 		return renderGatewayError(c, 499, "Client Closed Request");
+	}
+
+	// An upstream-side socket close (e.g. undici "terminated: other side
+	// closed" / ECONNRESET) that escaped the chat handler's own classification
+	// is an expected provider/client disconnect, not a gateway bug. Log it at
+	// warn to avoid raising server-error alerts.
+	if (isUpstreamTermination(error)) {
+		logger.warn("Upstream connection terminated", {
+			message: error instanceof Error ? error.message : String(error),
+			cause: extractErrorCause(error),
+			path: c.req.path,
+			method: c.req.method,
+		});
+		return renderGatewayError(c, 502, "Upstream connection terminated");
 	}
 
 	// For any other errors (non-HTTPException), return 500 Internal Server Error
@@ -291,7 +297,14 @@ app.openapi(root, async (c) => {
 	const TIMEOUT_MS = Number(process.env.HEALTH_CHECK_TIMEOUT_MS) || 15000;
 
 	const healthChecker = new HealthChecker({
-		redisClient,
+		// Ping both the main and the storage Redis; either failing marks the
+		// gateway unhealthy (they may be the same instance via env fallback).
+		redisClient: {
+			ping: async () => {
+				await Promise.all([redisClient.ping(), storageRedisClient.ping()]);
+				return "PONG";
+			},
+		},
 		db,
 		logger,
 	});
@@ -311,12 +324,16 @@ const v1 = new OpenAPIHono<ServerTypes>();
 v1.route("/chat", chat);
 v1.route("/embeddings", embeddingsRoute);
 v1.route("/images", imagesRoute);
+v1.route("/key", keyRoute);
 v1.route("/models", models);
 v1.route("/moderations", moderationsRoute);
 v1.route("/ocr", ocrRoute);
+v1.route("/rerank", rerankRoute);
 v1.route("/messages", anthropic);
 v1.route("/responses", responses);
 v1.route("/audio/speech", speechRoute);
+v1.route("/audio/transcriptions", transcriptionsRoute);
+v1.route("/realtime", realtimeClientSecretsRoute);
 v1.route("/videos", videosRoute);
 
 app.route("/v1", v1);
